@@ -403,3 +403,10 @@ install.packages("DataExplorer")
 DataExplorer::plot_bar(HRdata)   
 
 ```
+
+
+
+```{r}
+DataExplorer::create_report(HRdata,"HRdata.html")
+
+```

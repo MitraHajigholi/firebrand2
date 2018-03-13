@@ -1,0 +1,161 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+# Predict who will leave, by using who left
+```{r}
+library(readr)
+library(foreach)  
+library(tidyverse)  
+
+
+# import the data
+# import the data
+HR_Employee <- read_csv("WA_Fn-UseC_-HR-Employee-Attrition.csv")
+
+#DataExplorer::create_report(HR_Employee, "expectedsalary.html")
+
+
+
+```
+
+ 
+
+
+## CLEAN DATA AND DATA MANIPULATION
+Problems with the data to take care of: 
+- Categorical problems, change type 
+
+```{r}
+library(rsample)
+library(recipes)
+
+
+HR_Employee <- read_csv("WA_Fn-UseC_-HR-Employee-Attrition.csv")
+
+# collapse to a different category
+#HR_Employee %>% 
+#  mutate(Attrition_new = factor(Attrition)) %>%   # allows to update or add columns to the dataset
+#  count(Attrition_new, Attrition) %>% # it will show number of variables, 
+#  mutate(Education = factor(Education)) %>%   # allows to update or add columns to the dataset
+#  count(Education) = fct_recode(Education, a="1", b="2", c="3", d="4", e="5" ) #-> HR_Employee # it will show number of variables, 
+ 
+
+#or
+
+HR_Employee %>% 
+  mutate_if(~is.numeric(.)&n_distinct(.)<7, factor)   %>%   #  n_distinct = antalet distikta varden
+  mutate_if(is.character, factor) ->  HR_Employee
+
+
+
+# Split data, sample it to get training data and then test data to evluate to the models preformance
+HR_Employee %>% 
+  initial_split(prop=0.9) ->   # small dataset , to see the coeff are
+  Employee_split
+
+Employee_split %>% 
+  training() ->  
+  Employee_train
+
+Employee_split %>% 
+  testing() ->
+  Employee_test
+
+
+##Scaling and basics process
+Employee_train %>% 
+  recipe(MonthlyIncome ~ .)   %>%  # attrition ~ . means analyze attrition by everything as an output# any new data  can be used  # tell it to not touch attrition
+  step_center(all_numeric())  %>%  # make numeric
+  step_scale(all_numeric()) %>% 
+  prep(training = Employee_train) ->
+  Employee_preprocess
+
+
+##Feature reduction
+Employee_preprocess %>% 
+  bake(Employee_train) ->   #to include our variable we need to center them, how far away fom mean they are
+  Employee_train_p
+
+
+
+
+Employee_preprocess %>% 
+  step_corr(all_numeric()) %>%  #removes highly corr values
+  step_nzv(all_predictors()) %>%  #removed dominated
+  step_zv(all_predictors()) %>%  # removes constants
+  step_pca(all_numeric()) %>%   # selects the pca that are most responsible for the differences - has the most impact on the thing we are modelling  
+  prep(training = Employee_train) ->
+  Employee_preprocess
+
+Employee_preprocess %>% 
+  bake(Employee_train) ->
+  Employee_train_p
+
+
+Employee_preprocess %>% 
+  bake(Employee_test) ->
+  Employee_test_p
+
+
+
+
+Employee_train_p  %>% 
+  glm(Attrition~ ., data = ., family="binomial") -> 
+  Employee_glm_full
+
+library(broom)
+library(yardstick)  # 
+library(modelr)
+
+Employee_glm_full %>% 
+  broom::glance()  #creates a dataframe which takes our logLik, and AIC and BIC values, the lower the better. when building multiple models can ask it to Tell me which model is the best
+  
+Employee_glm_full %>% 
+  broom::tidy()   # output= term, estimate ~ related to some coeff (k value in y=kx=m) , std.error, the bigger p value the less confident we are that they are not good, want low p value..
+
+
+
+Employee_glm_full %>%  # with this info can do diagnostic study. Any areas have correlation? can use it to visualize 
+  broom::augment()# %>% View()
+
+
+
+
+Employee_test_p  %>% 
+  modelr::add_predictions(Employee_glm_full)  %>%   # takes our test data, creates a new column pred by default, 
+  mutate(class = factor(ifelse(pred >= 0, "Control", "Impared"), 
+         levels= c("Impaired", "Control"))) -> #diagnosis is original
+  Employee_test_scored
+
+
+# how right is our classification matrix?
+
+#alz_test_scored %>%  View()
+
+Employee_test_scored %>% # confusion matrix
+  yardstick::conf_mat(diagnosis, class)
+
+
+Employee_test_scored %>% # confusion matrix
+  yardstick::accuracy(diagnosis, class)
+
+22/nrow(Employee_test_scored)  #nr of correct/total
+
+
+
+Employee_test_scored %>% # confusion matrix
+  yardstick::spec(diagnosis, class)   # specificity the ones you get right,    
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::sens(diagnosis, class) # sensibility , 0 = did not managed to classify who is impaired. 
+
+
+
+
+
+
+```

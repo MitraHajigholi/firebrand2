@@ -9,6 +9,8 @@ output: word_document
 ```{r}
 library(foreach)  
 library(tidyverse)
+
+parallel::
 n_simulations <- 1000  # num times to run simulation
 nrows         <- 5000  
 sample_p      <- 0.7   
@@ -18,7 +20,10 @@ dist_sd       <- 1
 # for p-hacking!
 p_threshold   <-0.05
 
-sim_results <- foreach(r=seq_len(n_simulations), .combine = c)  %do% { #do in series 
+sim_results <- foreach(r=seq_len(n_simulations), .combine = c)  %do% { 
+  
+  
+  #do in series 
   
   #run simulation n_simulations, starts at 1 to x iteration 
 # what things do we want to build our sim over.  .combine = comnines stuff depending on the function you specify, in this case the c function, which combines stuff to a vector. 
@@ -51,6 +56,7 @@ seq_len(10)
 ```{r}
 library(foreach)  
 library(tidyverse)
+
 r_simulations <- seq_len(1)  # num times to run simulation
 nrows         <- seq(5000, 200000, by=10000)  
 sample_p      <- c(0.7, 0.8, 0.9)   
@@ -107,4 +113,321 @@ sim_results %>%
 
 
 ```
+
+### run in parallel cores, 
+```{r}
+# drawback = managing outputs, slows down, pros = fast running
+library(foreach)  
+library(tidyverse)
+library(parallel)
+library(doParallel)
+
+## make running efficient by using all cores when running
+# make R aware of that we have a machine with 4 cores.. ish
+my_machine <- makeCluster(detectCores())  
+#sets up the working environment
+registerDoParallel(my_machine)
+
+#how many simulation will we do?
+r_simulations <- seq_len(10)  # num times to run simulation
+nrows         <- seq(5000, 200000, by=10000)  
+sample_p      <- c(0.7, 0.8, 0.9)   
+# values should have
+dist_mean     <-0    
+dist_sd       <- 1:10
+# for p-hacking!
+p_threshold   <- c(0.05, 0.1)  # for p-hacking
+
+# how likely is it to get two different means?
+
+#create a combos table, a combination of all values
+combos <- expand.grid(r=r_simulations,
+                       n = nrows,
+                       s=sample_p,
+                       m=dist_mean,
+                       sd = dist_sd,
+                       p=p_threshold)
+
+nrow(combos)
+
+
+sim_results <- foreach(t= 1:nrow(combos),  #tablerow
+                       .combine = rbind)    %dopar% {   
+
+df <-combos[t,]
+outcome_var   <- rnorm(df$n, mean = df$m, sd= df$sd)  
+#picks random number from normal distribution and having mean and normal distr we specif.
+                         
+# rbind returns a singe row dataframe combines to a bid dataframe
+#do in series 
+#run simulation n_simulations, starts at 1 to x iteration 
+# what things do we want to build our sim over.  .combine = comnines stuff depending on the function you specify, in this case the c function, which combines stuff to a vector. 
+  
+use_for_training <- sample (1:df$n, df$n*df$s)  # produces a vector of length df$n, and selects the percentage of the sample
+training <- outcome_var[use_for_training]
+testing <- outcome_var[-use_for_training]
+sim_ttest <-  t.test(training, testing)   # comparing mean values 
+df$result <- ifelse(sim_ttest$p.value > df$p, "Same", "Different")  # extract the p value from t.test, and comparing with threashold df%p, adds a new column result.
+
+df  # output the data, to get the information about the initial set of data, to analyze it later, passes the result to "foreach" to save it to outcome_var
+
+#data.frame(
+ # r,n,s,m,sd,p,
+  #result= ifelse(sim_ttest$p.value > p , 
+  #     "Means the same!", "Means not the same")
+#)
+
+}
+
+sim_results %>% 
+  count(result) %>%   # builds a frequency table,  
+  mutate(prop=scales::percent(nn/sum(nn)))  # n is the number of sum of cuonted value
+
+
+library(ggplot2)
+sim_results %>% 
+  mutate(sim=row_number()) %>% 
+  gather(lever, value, -r, -sim, -result)  %>%  # unpivot action, creates lever w
+  count(lever, value, result)   %>%  # group by and count * from SQL pers.  
+  filter(result!="Same") %>% 
+  filter(lever!= "m") %>% 
+  ggplot(aes(x=value, y=n)) + 
+    geom_line(color="blue") +
+    facet_wrap(~lever, scales = "free") + # make a chart per liver parameter
+    theme_minimal() +
+    geom_smooth()
+
+
+
+```
+
+
+
+
+## EXAMPLE USE ON DATA
+```{r}
+library(tidyverse)
+library(AppliedPredictiveModeling)
+
+#vilken data den ska anvanda
+data(AlzheimerDisease)
+
+# for putting two tables into 1
+predictors %>%    # obj1 dataframe, 
+  cbind(diagnosis) ->  # columnband #outcome =
+  alzheimers
+
+DataExplorer::create_report(alzheimers, "alzheimers.html")
+
+
+#bigger version of the chart
+alzheimers %>% 
+  ggplot(aes(x=Thyroid_Stimulating_Hormone)) +
+  geom_histogram()
+
+alzheimers %>% 
+  View()
+
+
+alzheimers %>% 
+  filter(Thyroid_Stimulating_Hormone== min(Thyroid_Stimulating_Hormone))  %>% #replace the variable with the min value.. 
+  skimr::skim()
+
+
+
+```
+
+
+
+
+
+
+## CLEAN DATA AND DATA MANIPULATION
+```{r}
+# collapse to a different category
+alzheimers %>% 
+  mutate(male_new = factor(male)) %>% 
+  count(male_new, male)  # if male is 0 new should show 0 aswell
+  
+
+
+```
+
+
+
+```{r}
+# collapse to a different category
+alzheimers %>% 
+  mutate(male = factor(male) , # factor changes the datatype from numeric to categ. 
+  Genotype = fct_infreq(fct_lump(Genotype, n=3)) ) ->  # fct_lump klumpar ihop # fct_infreq order in most freqently , # lump together  the last categorical (n=3 means that you are not lumping together the first 3)
+  #count(Genotype)
+#update our dataset
+  alzheimers
+
+library(rsample)
+library(recipes)
+
+# sample it to get training data and then test data to evluate to the models preformance
+alzheimers %>% 
+  initial_split(prop=0.9) ->   # Selects
+  alz_split
+
+alz_split %>% 
+  training() ->   # selects a percentage randomly for training from input data  
+  alz_train
+
+alz_split %>% 
+  testing() ->
+  alz_test
+
+# numeric scaling, different ways of doing it, neural nets expect a minmax scaling
+# minmax-scaling : take away the smallest value, divide by the largest value, 
+# adda bit of padding, to ensure not get neg values.. 
+#zscore scaling: mean call zero, how many standard dev is from mean, minus mean positve, useful to get what the data is at a stanard dev value. Can use the std to scale any new data coming in, on testdata, tex.
+
+# clean first and then scale to not affect the testdata
+
+
+##Scaling and basics process
+
+alz_train %>% 
+  recipe(diagnosis ~ .)   %>%  # diagnosis ~ . means analyze diagnosis by everything as an output# any new data  can be used  # tell it to not touch dignosis
+  step_center(all_numeric())  %>%  # make numeric
+  step_scale(all_numeric()) %>% 
+  prep(training = alz_train) ->
+  alz_preprocess
+
+##Use this 
+#alz_train %>% 
+#  bake(alz_preprocess,.) ->
+#  alz_train_p
+
+## or this:
+
+##Feature reduction
+alz_preprocess %>% 
+  bake(alz_train) ->   #to include our variable we need to center them, how far away fom mean they are
+  alz_train_p
+
+# want to keep uncorrelated parameters, them to be "90 degrees uncorrelated" in models. 
+
+
+
+#Imputation steps is filling in values with a guess, use the mean or medium, but better way is... nearest neighbors, near-zero variance filter (high -low result, remove little variation), PCA Signal extraction (how they will account in changing variables), scaling.., shuffle mixing data in different orders. 
+# Sampling stuff, down sampling, upsampling
+#You can write your own step.
+
+
+alz_preprocess %>% 
+  step_corr(all_numeric()) %>%  #removes higly corr values
+  step_nzv(all_predictors()) %>%  #removed dominated
+  step_zv(all_predictors()) %>%  # removes constants
+  step_pca(all_numeric()) %>%   # selects the pca that are most responsible for the differences - has the most impact on the thing we are modelling  
+  prep(training = alz_train) ->
+  alz_preprocess
+
+alz_preprocess %>% 
+  bake(alz_train) ->
+  alz_train_p
+
+
+alz_preprocess %>% 
+  bake(alz_test) ->
+  alz_test_p
+
+## these relationships between the data, represnt all of the change
+
+#convert the data, to run any new data that looks like starting, that is needed before modelling stage
+
+#for every dimension, it will shift the x and y axis to find the new coordinates.  Translates into where the datapoints are compared to coord. The output is in the new PCA coordinate system. becomes easier to process. Values become much smaller. PCA goes through all the dimensions, and ensure that all the values of the points become minimalized in the PCA coordinate. This is effektive in a 3D or nD coordinate system, 
+# Using PCA for different categories of the same value it is easier to compare them to each other.
+
+
+
+
+# 
+
+
+
+
+
+```
+
+
+
+
+Binomial classification
+Logistic regression
+probability range, if higher than 0.5 probable or less than 0.5 not
+can take the odds of something happening divided by it not happening.
+
+logit usefull tool to to classification, read about it.
+
+glm function, packages somthing...
+
+
+# Regression
+```{r}
+rm("diagnosis")  #'removed bcz a vector had the same name
+
+alz_train_p  %>% 
+  glm(diagnosis~ ., data = ., family="binomial") -> 
+  alz_glm_full
+
+library(broom)
+library(yardstick)  # 
+library(modelr)
+
+alz_glm_full %>% 
+  broom::glance()  #creates a dataframe which takes our logLik, and AIC and BIC values, the lower the better. when building multiple models can ask it to Tell me which model is the best
+  
+alz_glm_full %>% 
+  broom::tidy()   # output= term, estimate ~ related to some coeff (k value in y=kx=m) , std.error, the bigger p value the less confident we are that they are not good, want low p value..
+
+
+
+alz_glm_full %>%  # with this info can do diagnostic study. Any areas have correlation? can use it to visualize 
+  broom::augment()# %>% View()
+
+
+
+
+alz_test_p  %>% 
+  modelr::add_predictions(alz_glm_full)  %>%   # takes our test data, creates a new column pred by default, 
+  mutate(class = factor(ifelse(pred >= 0, "Control", "Impared"), 
+         levels= c("Impaired", "Control"))) -> #diagnosis is original
+  alz_test_scored
+
+# how right is our classification matrix?
+
+#alz_test_scored %>%  View()
+
+alz_test_scored %>% # confusion matrix
+  yardstick::conf_mat(diagnosis, class)
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::accuracy(diagnosis, class)
+
+22/nrow(alz_test_scored)  #nr of correct/total
+
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::spec(diagnosis, class)   # specificity the ones you get right,    
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::sens(diagnosis, class) # sensibility , 0 = did not managed to classify who is impaired. 
+
+
+
+
+
+
+
+```
+
+
+
 
