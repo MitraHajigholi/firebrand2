@@ -1,0 +1,110 @@
+---
+title: "R Notebook"
+output: word_document
+---
+
+# Chapter 2
+## Probability and statistics
+### Learn
+```{r}
+library(foreach)  
+library(tidyverse)
+n_simulations <- 1000  # num times to run simulation
+nrows         <- 5000  
+sample_p      <- 0.7   
+# values should have
+dist_mean     <-0    
+dist_sd       <- 1
+# for p-hacking!
+p_threshold   <-0.05
+
+sim_results <- foreach(r=seq_len(n_simulations), .combine = c)  %do% { #do in series 
+  
+  #run simulation n_simulations, starts at 1 to x iteration 
+# what things do we want to build our sim over.  .combine = comnines stuff depending on the function you specify, in this case the c function, which combines stuff to a vector. 
+  
+outcome_var   <- rnorm(nrows, mean = dist_mean, sd= dist_sd)  #picks random number from normal distribution and having mean and normal distr we specif.
+use_for_training <- sample (1:nrows, nrows*sample_p)  
+training <- outcome_var[use_for_training]
+testing <- outcome_var[-use_for_training]
+sim_ttest <-  t.test(training, testing)
+
+ifelse(sim_ttest$p.value > p_threshold,
+       "Means the same!", "Means not the same")
+
+}
+
+
+sim_results %>% 
+  fct_count() %>%   # builds a frequency table,  
+  mutate(prop=scales::percent(n/sum(n)))  # n is the number of sum of cuonted value
+
+```
+
+
+```{r}
+seq_len(10)
+```
+
+
+### Changing from a sim with fix parameters to variable parameters
+```{r}
+library(foreach)  
+library(tidyverse)
+r_simulations <- seq_len(1)  # num times to run simulation
+nrows         <- seq(5000, 200000, by=10000)  
+sample_p      <- c(0.7, 0.8, 0.9)   
+# values should have
+dist_mean     <-0    
+dist_sd       <- 1:10
+# for p-hacking!
+p_threshold   <- c(0.05, 0.1)  # for p-hacking
+
+#how many simulation will we do?
+#create a combos table
+combos <- expand.grid(r=r_simulations,
+                       n = nrows,
+                       s=sample_p,
+                       m=dist_mean,
+                       sd = dist_sd,
+                       p=p_threshold)
+
+nrow(combos)
+
+
+sim_results <- foreach(t= 1:nrow(combos),  #tablerow
+                       .combine = rbind)    %do% {   
+
+df <-combos[t,]
+outcome_var   <- rnorm(df$n, mean = df$m, sd= df$sd)  
+#picks random number from normal distribution and having mean and normal distr we specif.
+                         
+# rbind returns a singe row dataframe combines to a bid dataframe
+#do in series 
+#run simulation n_simulations, starts at 1 to x iteration 
+# what things do we want to build our sim over.  .combine = comnines stuff depending on the function you specify, in this case the c function, which combines stuff to a vector. 
+  
+use_for_training <- sample (1:df$n, df$n*df$s)  
+training <- outcome_var[use_for_training]
+testing <- outcome_var[-use_for_training]
+sim_ttest <-  t.test(training, testing)
+df$result <- ifelse(sim_ttest$p.value > p, "Same", "Different")
+
+df
+
+#data.frame(
+ # r,n,s,m,sd,p,
+  #result= ifelse(sim_ttest$p.value > p , 
+  #     "Means the same!", "Means not the same")
+#)
+
+}
+
+sim_results %>% 
+  count(result) %>%   # builds a frequency table,  
+  mutate(prop=scales::percent(nn/sum(nn)))  # n is the number of sum of cuonted value
+
+
+
+```
+
