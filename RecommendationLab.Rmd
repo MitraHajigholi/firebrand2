@@ -1,0 +1,79 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+#Recommendation
+Recommendation matrix loko at the history of data, if all have seen movie A it cannot recomment it. If 2 out fo 4 have seen movie B, it can rec to see Movie B to the other two, 
+
+  S E T M
+Y 1 1 1 0
+C 0 1 1 0 
+M 0 0 1 1     
+K 1 1 1 1
+
+Y + C = 2
+Y + M = 1
+Y + K = 3
+
+  Y C M K
+Y 1 2 1 3
+C 2 1 . .
+M 1 . 1 .
+K 3 . . 1
+
+
+
+-Build diff candidate models, write a test thingy to how good they are..
+-Recommend and compare with om den blev kopt,
+-Data have to be in a matrix, all values the same datatype.
+-
+- Create a Rating matrix, cons: extream data, very satisfied or Absolutely not -- > need to normalize using std from mean.
+- remove those who did not like the movie, keep movies that people recommended little, up to very much. remove the contiuous values
+
+
+## example 1
+```{r}
+library(recommenderlab)
+library(tidyverse)
+
+data(MovieLense) # good and bad movies 
+image(MovieLense)
+model <- Recommender(MovieLense, method = "POPULAR")
+#as(predict(model, MovieLense[101], n=10))  # make prediction use prediction engine, it wants reccomendation, convert the object, 
+
+
+#expand.grid()
+
+
+```
+
+
+
+
+
+
+## example 2, jokes
+
+-Popular jokes that he has not seen is recommendended.
+-How would the person rates jokes in relation to popularity estimated, high or low ranked
+-Users actual rating the user gave and compared to predicted, look were errors are.
+-Evaluation scheme under which our model will work
+- Train-test-split: how many random users we shuld keep...
+- Build the evaluation scheme, to preform useful stuff...
+- Predict data, give ratings, give back as ratings to see what they look like
+- calc accuracy to compare against unknown data
+- create a crossvalidation matrix
+- evaluate function will build a model for us, use the evaluate, build it x nr of times.
+RMSE = rms , MSE= mean square error, MAE =mean absolute error
+- Can get the average of these values, the blended preformance of our model, based on 10 diff samples.
+-Create an evaluation scheme, ..operate on rating data...
+-Build a single model, based on rating solution.
+
+
+
+```{r}
+
+data()
+
+```
+

@@ -1,0 +1,264 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## EXAMPLE USE ON DATA
+```{r}
+library(tidyverse)
+library(AppliedPredictiveModeling)
+
+#vilken data den ska anvanda
+data(AlzheimerDisease)
+
+# for putting two tables into 1
+predictors %>%    # obj1 dataframe, 
+  cbind(diagnosis) ->  # columnband #outcome =
+  alzheimers
+
+#DataExplorer::create_report(alzheimers, "alzheimers.html")
+
+
+#bigger version of the chart
+alzheimers %>% 
+  ggplot(aes(x=Thyroid_Stimulating_Hormone)) +
+  geom_histogram()
+
+alzheimers %>% 
+  View()
+
+
+alzheimers %>% 
+  filter(Thyroid_Stimulating_Hormone== min(Thyroid_Stimulating_Hormone))  %>% #replace the variable with the min value.. 
+  skimr::skim()
+
+
+
+```
+
+
+
+
+
+
+## CLEAN DATA AND DATA MANIPULATION
+```{r}
+# collapse to a different category
+alzheimers %>% 
+  mutate(male_new = factor(male)) %>% 
+  count(male_new, male)  # if male is 0 new should show 0 aswell
+  
+
+
+```
+
+
+
+```{r}
+# collapse to a different category
+alzheimers %>% 
+  mutate(male = factor(male) , # factor changes the datatype from numeric to categ. 
+  Genotype = fct_infreq(fct_lump(Genotype, n=3)) ) ->  # fct_lump klumpar ihop # fct_infreq order in most freqently , # lump together  the last categorical (n=3 means that you are not lumping together the first 3)
+  #count(Genotype)
+#update our dataset
+  alzheimers
+
+library(rsample)
+library(recipes)
+
+# sample it to get training data and then test data to evluate to the models preformance
+alzheimers %>% 
+  initial_split(prop=0.9) ->   # Selects
+  alz_split
+
+alz_split %>% 
+  training() ->   # selects a percentage randomly for training from input data  
+  alz_train
+
+alz_split %>% 
+  testing() ->
+  alz_test
+
+# numeric scaling, different ways of doing it, neural nets expect a minmax scaling
+# minmax-scaling : take away the smallest value, divide by the largest value, 
+# adda bit of padding, to ensure not get neg values.. 
+#zscore scaling: mean call zero, how many standard dev is from mean, minus mean positve, useful to get what the data is at a stanard dev value. Can use the std to scale any new data coming in, on testdata, tex.
+
+# clean first and then scale to not affect the testdata
+
+
+##Scaling and basics process
+
+alz_train %>% 
+  recipe(diagnosis ~ .)   %>%  # diagnosis ~ . means analyze diagnosis by everything as an output# any new data  can be used  # tell it to not touch dignosis
+  step_center(all_numeric())  %>%  # make numeric
+  step_scale(all_numeric()) %>% 
+  prep(training = alz_train) ->
+  alz_preprocess
+
+##Use this 
+#alz_train %>% 
+#  bake(alz_preprocess,.) ->
+#  alz_train_p
+
+## or this:
+
+##Feature reduction
+alz_preprocess %>% 
+  bake(alz_train) ->   #to include our variable we need to center them, how far away fom mean they are
+  alz_train_p
+
+# want to keep uncorrelated parameters, them to be "90 degrees uncorrelated" in models. 
+
+
+
+#Imputation steps is filling in values with a guess, use the mean or medium, but better way is... nearest neighbors, near-zero variance filter (high -low result, remove little variation), PCA Signal extraction (how they will account in changing variables), scaling.., shuffle mixing data in different orders. 
+# Sampling stuff, down sampling, upsampling
+#You can write your own step.
+
+
+alz_preprocess %>% 
+  step_corr(all_numeric()) %>%  #removes higly corr values
+  step_nzv(all_predictors()) %>%  #removed dominated
+  step_zv(all_predictors()) %>%  # removes constants
+  step_pca(all_numeric()) %>%   # selects the pca that are most responsible for the differences - has the most impact on the thing we are modelling  
+  step_upsample(diagnosis) %>%  #generate new rows, # Use it to create copies of data points to make the resulting crosscorr table better guessing 
+  # not well for the low amunt data, this function takes copies, make default as the one having lots of data, fits better. 
+  prep(training = alz_train, retain = TRUE) ->  #upsample gets trained 
+  alz_preprocess
+
+#alz_preprocess %>% 
+#  bake(alz_train) ->   #convert to preprocessed 
+#  alz_train_p
+
+alz_preprocess %>% 
+  juice(all_outcomes(), all_predictors()) ->  # jucie train data 
+  alz_train_p
+
+alz_preprocess %>% 
+  bake(alz_test) ->  #bake drops columns if if it given it steps to cause drops... 
+  alz_test_p
+
+## these relationships between the data, represnt all of the change
+
+#convert the data, to run any new data that looks like starting, that is needed before modelling stage
+
+#for every dimension, it will shift the x and y axis to find the new coordinates.  Translates into where the datapoints are compared to coord. The output is in the new PCA coordinate system. becomes easier to process. Values become much smaller. PCA goes through all the dimensions, and ensure that all the values of the points become minimalized in the PCA coordinate. This is effektive in a 3D or nD coordinate system, 
+# Using PCA for different categories of the same value it is easier to compare them to each other.
+
+
+
+
+# 
+
+
+
+
+
+```
+
+
+
+
+Binomial classification
+Logistic regression
+probability range, if higher than 0.5 probable or less than 0.5 not
+can take the odds of something happening divided by it not happening.
+
+logit usefull tool to to classification, read about it.
+
+glm function, packages somthing...
+
+
+# Regression
+```{r}
+rm("diagnosis")  #'removed bcz a vector had the same name
+
+alz_train_p  %>% 
+  glm(diagnosis~ ., data = ., family="binomial") -> 
+  alz_glm_full
+
+library(broom)
+library(yardstick)  # 
+library(modelr)
+
+alz_glm_full %>% 
+  broom::glance()  #creates a dataframe which takes our logLik, and AIC and BIC values, the lower the better. when building multiple models can ask it to Tell me which model is the best
+  
+alz_glm_full %>% 
+  broom::tidy()   # output= term, estimate ~ related to some coeff (k value in y=kx=m) , std.error, the bigger p value the less confident we are that they are not good, want low p value..
+
+
+alz_glm_full %>%  # with this info can do diagnostic study. Any areas have correlation? can use it to visualize 
+  broom::augment()# %>% View()
+
+
+
+
+library(FFTrees)
+alz_glm_full %>%  
+  broom::augment() %>% 
+  select(diagnosis:.fitted) %>% 
+  mutate(class=factor(ifelse(.fitted >=0, "Control", "Impaired"),  #what we classified as wrong
+                      levels = c("Impaired", "Control"))) %>% 
+  mutate(correct = diagnosis == class) %>% 
+  select(-.fitted,-class) %>% 
+  FFTrees(correct ~ ., data = .) %>% 
+  plot()
+
+alz_train   %>% 
+  mutate(diagnosis= diagnosis ==  "Impaired") %>%  # diagnosis get changed to true or false 
+  FFTrees(diagnosis~., .)  %>% # ~. = analyse diagnoso by everything
+  plot()
+
+
+
+alz_test_p  %>% 
+  modelr::add_predictions(alz_glm_full)  %>%   # takes our test data, creates a new column pred by default, 
+  mutate(class = factor(ifelse(pred >= 0, "Control", "Impaired"), 
+         levels= c("Impaired", "Control"))) -> #diagnosis is original
+  alz_test_scored
+
+# how right is our classification matrix?
+
+#alz_test_scored %>%  View()
+
+alz_test_scored %>% # confusion matrix
+  yardstick::conf_mat(diagnosis, class)
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::accuracy(diagnosis, class)
+
+22/nrow(alz_test_scored)  #nr of correct/total
+
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::spec(diagnosis, class)   # specificity the ones you get right,    
+
+
+alz_test_scored %>% # confusion matrix
+  yardstick::sens(diagnosis, class) # sensibility , 0 = did not managed to classify who is impaired. 
+
+
+###
+alz_glm_full %>% 
+  caret::varImp()
+
+
+
+### 
+#library(optiRum)
+#alz_glm_full %>%  
+#  broom::augment() %>% 
+#  mutate(prob = logit.prob(.fitted)) %>%   # .fitted = pred??
+#  count()
+  
+
+
+```
+
+
+
+

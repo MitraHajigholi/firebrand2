@@ -21,7 +21,16 @@ HR_Employee <- read_csv("WA_Fn-UseC_-HR-Employee-Attrition.csv")
 
 ```
 
- 
+dplyr verb conventions
+- verb by itself e.g. "select()" allows you to manually write out sections
+-verb suffixed "_if" e.g. "select_if()" you can write predicates/conditions based on the column contents
+-verb suffixed "_at" e.g. "select_at()" you can write predicates/conditions based on the column namne
+-verb suffixed "_all" e.g. "select_all()" you apply a function to every column.
+
+
+filter_at # allows us to work with the column of the data and 
+filter_if() # allows us to work with 
+
 
 
 ## CLEAN DATA AND DATA MANIPULATION
@@ -49,6 +58,26 @@ HR_Employee %>%
   mutate_if(~is.numeric(.)&n_distinct(.)<7, factor)   %>%   #  n_distinct = antalet distikta varden
   mutate_if(is.character, factor) ->  HR_Employee
 
+HR_Employee %>%
+  mutate(Education=fct_recode(Education,
+                              'Below College'="1",
+                              'College'="2",
+                              'Bachelor'="3",
+                              'Master'="4",
+                              'Doctor'="5"
+                              )) -> HR_Employee
+
+#HR_Employee %>%
+#  mutate_at(vars(contains("Satisfaction")), scale_recode)
+  
+  
+  
+
+# see sect 18.3 in lockedata report
+scale_recode <- function(x) 
+  {fct_recode(factor(x), "Low"="1")
+  }
+
 
 
 # Split data, sample it to get training data and then test data to evluate to the models preformance
@@ -67,7 +96,7 @@ Employee_split %>%
 
 ##Scaling and basics process
 Employee_train %>% 
-  recipe(MonthlyIncome ~ .)   %>%  # attrition ~ . means analyze attrition by everything as an output# any new data  can be used  # tell it to not touch attrition
+  recipe(Attrition ~ .)   %>%  # attrition ~ . means analyze attrition by everything as an output# any new data  can be used  # tell it to not touch attrition
   step_center(all_numeric())  %>%  # make numeric
   step_scale(all_numeric()) %>% 
   prep(training = Employee_train) ->
@@ -86,13 +115,21 @@ Employee_preprocess %>%
   step_corr(all_numeric()) %>%  #removes highly corr values
   step_nzv(all_predictors()) %>%  #removed dominated
   step_zv(all_predictors()) %>%  # removes constants
-  step_pca(all_numeric()) %>%   # selects the pca that are most responsible for the differences - has the most impact on the thing we are modelling  
-  prep(training = Employee_train) ->
+ # step_upsample(all_outcomes()) %>%  # 
+#  step_pca(all_numeric()) %>%   # selects the pca that are most responsible for the differences - has the most impact on the thing we are modelling  
+  step_upsample(Attrition) %>%  #generate new rows, # Use it to create copies of data points to make the resulting crosscorr table better guessing 
+  # not well for the low amunt data, this function takes copies, make default as the one having lots of data, fits better. 
+  prep(training = Employee_train, retain = TRUE) ->  #upsample gets trained 
   Employee_preprocess
 
+#Employee_preprocess %>% 
+#  bake(Employee_train) ->
+#  Employee_train_p
+
 Employee_preprocess %>% 
-  bake(Employee_train) ->
+  juice(all_outcomes(), all_predictors()) ->  # jucie train data 
   Employee_train_p
+
 
 
 Employee_preprocess %>% 
@@ -116,18 +153,30 @@ Employee_glm_full %>%
 Employee_glm_full %>% 
   broom::tidy()   # output= term, estimate ~ related to some coeff (k value in y=kx=m) , std.error, the bigger p value the less confident we are that they are not good, want low p value..
 
-
-
 Employee_glm_full %>%  # with this info can do diagnostic study. Any areas have correlation? can use it to visualize 
-  broom::augment()# %>% View()
+  broom::augment()# %>% View()  # takes the training data and adds information about how it fitted a line best fit to the data. 
+
+
+
+#need the fitted data, fited column
+library(FFTrees)
+Employee_glm_full %>%  
+  broom::augment() %>% 
+  select(Attrition:.fitted) %>% 
+  mutate(class=factor(ifelse(.fitted >=0, "Yes", "No")
+                      )) %>% 
+  mutate(correct = Attrition == class)
+
+
+
 
 
 
 
 Employee_test_p  %>% 
   modelr::add_predictions(Employee_glm_full)  %>%   # takes our test data, creates a new column pred by default, 
-  mutate(class = factor(ifelse(pred >= 0, "Control", "Impared"), 
-         levels= c("Impaired", "Control"))) -> #diagnosis is original
+  mutate(class = factor(ifelse(pred >= 0, "Yes", "No") # pred = contains score of the model #odds of positive 
+                        )) -> #diagnosis is original
   Employee_test_scored
 
 
@@ -136,26 +185,43 @@ Employee_test_p  %>%
 #alz_test_scored %>%  View()
 
 Employee_test_scored %>% # confusion matrix
-  yardstick::conf_mat(diagnosis, class)
+  yardstick::conf_mat(Attrition, class)
 
 
 Employee_test_scored %>% # confusion matrix
-  yardstick::accuracy(diagnosis, class)
+  yardstick::accuracy(Attrition, class)
 
 22/nrow(Employee_test_scored)  #nr of correct/total
 
 
 
 Employee_test_scored %>% # confusion matrix
-  yardstick::spec(diagnosis, class)   # specificity the ones you get right,    
+  yardstick::spec(Attrition, class)   # specificity the ones you get right,    
 
 
-alz_test_scored %>% # confusion matrix
-  yardstick::sens(diagnosis, class) # sensibility , 0 = did not managed to classify who is impaired. 
+Employee_test_scored %>% # confusion matrix
+  yardstick::sens(Attrition, class) # sensibility , 0 = did not managed to classify who is impaired. 
 
 
+# How much the columns affect the prob to leave company
+###
+Employee_glm_full %>% 
+  caret::varImp()
 
 
+#Employee_glm_full %>% 
+#  broom::augment() %>% 
+#  mutate(prob= logit.prob(.fitted)) %>% 
+#  count(Attrition, prob) %>% 
+#  spread(Attrition, n, fill = 0) %>% 
+#  mutate(Impaired_correct=cumsum(Impaired)
 
 
 ```
+
+
+
+```{r}
+
+```
+
